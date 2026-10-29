@@ -1,4 +1,4 @@
-﻿# AI 网页作品合集
+# AI 网页作品合集
 
 在线体验：**https://lijie.gt.tc/ai-games.html**
 
