@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>90° V 型八缸发动机 · 高精度可运转剖视模型</title>
+<style>
+  :root{
+    --bg:#08090c; --panel:rgba(14,17,23,.88); --line:rgba(130,160,210,.14);
+    --txt:#e3e9f2; --dim:#8b98ab; --acc:#5fb2ff; --acc2:#7ee0c8; --bad:#ff7b72;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+    font-family:"Segoe UI","Microsoft YaHei",-apple-system,sans-serif;color:var(--txt)}
+  #app{position:fixed;inset:0}
+  #app canvas{display:block}
+  #vignette{position:fixed;inset:0;pointer-events:none;
+    background:radial-gradient(ellipse at 50% 42%,transparent 52%,rgba(0,0,0,.5) 100%)}
+  .panel{position:fixed;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    box-shadow:0 8px 32px rgba(0,0,0,.5)}
+  #title{top:18px;left:18px;padding:14px 18px;max-width:360px}
+  #title h1{font-size:17px;font-weight:600;letter-spacing:.5px}
+  #title h1 em{font-style:normal;color:var(--acc)}
+  #title p{font-size:11.5px;color:var(--dim);margin-top:5px;line-height:1.55}
+  #title .spec{display:flex;gap:14px;margin-top:9px;padding-top:9px;border-top:1px solid var(--line);flex-wrap:wrap}
+  #title .spec div{font-size:10px;color:var(--dim)}
+  #title .spec b{display:block;font-size:12.5px;color:var(--txt);font-weight:600;margin-bottom:1px}
+  #status{top:18px;right:18px;padding:10px 14px;font-size:11.5px;display:flex;gap:14px;align-items:center}
+  #audit{color:var(--acc2);cursor:pointer;user-select:none}
+  #audit.bad{color:var(--bad)}
+  #fps{color:var(--dim);min-width:88px;text-align:right}
+  #auditPanel{display:none;top:64px;right:18px;width:430px;max-height:60vh;overflow:auto;padding:12px}
+  #auditPanel h3{font-size:12px;color:var(--dim);margin-bottom:8px;letter-spacing:1px}
+  #auditPanel table{width:100%;border-collapse:collapse;font-size:11px}
+  #auditPanel td{padding:3.5px 6px;border-bottom:1px solid var(--line)}
+  #auditPanel td:nth-child(2){text-align:right;font-family:Consolas,monospace}
+  #auditPanel td:nth-child(3){text-align:right;color:var(--dim);font-family:Consolas,monospace}
+  #auditPanel td:nth-child(4){text-align:center}
+  #auditPanel .ok{color:var(--acc2)} #auditPanel .bad{color:var(--bad);font-weight:700}
+  #parts{top:150px;left:18px;width:236px;max-height:calc(100vh - 420px);display:flex;flex-direction:column}
+  #parts h3{font-size:11px;color:var(--dim);font-weight:600;padding:11px 14px 8px;letter-spacing:1px;border-bottom:1px solid var(--line)}
+  #partList{list-style:none;overflow-y:auto;padding:6px}
+  #partList li{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;font-size:12.5px;cursor:pointer;transition:background .15s}
+  #partList li:hover{background:rgba(95,178,255,.10)}
+  #partList li.sel{background:rgba(95,178,255,.18);outline:1px solid rgba(95,178,255,.35)}
+  #partList .nm{flex:1}
+  #ctrl{bottom:18px;left:50%;transform:translateX(-50%);padding:12px 18px;display:flex;gap:18px;align-items:center;flex-wrap:wrap;max-width:calc(100vw - 36px)}
+  .grp{display:flex;flex-direction:column;gap:5px}
+  .grp label{font-size:10px;color:var(--dim);letter-spacing:1px}
+  .grp .row{display:flex;gap:8px;align-items:center}
+  button{background:rgba(95,178,255,.12);color:var(--txt);border:1px solid rgba(95,178,255,.3);
+    border-radius:7px;padding:5px 11px;font-size:12px;cursor:pointer;transition:background .15s}
+  button:hover{background:rgba(95,178,255,.25)}
+  input[type=range]{width:120px;accent-color:var(--acc)}
+  input[type=checkbox]{accent-color:var(--acc)}
+  .val{font-size:11px;color:var(--acc);font-family:Consolas,monospace;min-width:60px}
+  .chk{display:flex;gap:5px;align-items:center;font-size:11.5px;cursor:pointer}
+  #views{display:flex;gap:5px;flex-wrap:wrap}
+  #views button{padding:4px 8px;font-size:11px}
+  #info{display:none;bottom:96px;right:18px;width:290px;padding:13px 16px}
+  #info h4{font-size:13.5px;color:var(--acc);margin-bottom:6px}
+  #info p{font-size:11.5px;color:var(--dim);line-height:1.6}
+  #hint{bottom:18px;right:18px;padding:7px 12px;font-size:11px;color:var(--dim)}
+  #loader{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:16px;z-index:9}
+  #loader .ring{width:44px;height:44px;border-radius:50%;border:3px solid rgba(95,178,255,.18);
+    border-top-color:var(--acc);animation:sp 1s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  #loader p{font-size:13px;color:var(--dim)}
+  #loader button{margin-top:4px}
+  @media (max-width:1100px){ #parts{display:none} #hint{display:none} }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="vignette"></div>
+
+<div class="panel" id="title">
+  <h1>90° <em>V8</em> 发动机 · 高精度可运转剖视模型</h1>
+  <p>全程序化参数建模:交叉平面曲轴 · 下置凸轮轴推杆式配气 · 全链解析运动学。<br>
+     所有配合副间隙由 720° 循环扫描自检,任何零件之间<b style="color:var(--acc2)">无穿模/无重叠</b>。</p>
+  <div class="spec">
+    <div><b>5.7 L</b>排量(等比)</div>
+    <div><b>96 × 90</b>缸径×行程</div>
+    <div><b>90°</b>V 型夹角</div>
+    <div><b>16</b>气门 OHV</div>
+    <div id="firing" style="width:100%"><b>—</b></div>
+  </div>
+</div>
+
+<div class="panel" id="status">
+  <span id="audit">间隙自检 …</span>
+  <span id="fps">— fps</span><span id="build" style="color:#6c7a92">build v9 · 80/80·35/35</span>
+</div>
+
+<div class="panel" id="auditPanel">
+  <h3>间隙自检明细(静态配合 + 720° 全循环扫描)</h3>
+  <table><thead><tr><th>检查项</th><th>实测</th><th>要求</th><th>结果</th></tr></thead>
+  <tbody></tbody></table>
+</div>
+
+<div class="panel" id="parts">
+  <h3>部件清单 · 点击聚焦</h3>
+  <ul id="partList"></ul>
+</div>
+
+<div class="panel" id="ctrl">
+  <div class="grp"><label>运转控制</label>
+    <div class="row">
+      <button id="play">⏸ 暂停</button>
+      <button id="step">单步 15°</button>
+      <input type="range" id="rpm" min="30" max="1500" value="240" step="10">
+      <span class="val" id="rpmVal">240 rpm</span>
+    </div>
+  </div>
+  <div class="grp"><label>爆炸视图 <span class="val" id="expVal"></span></label>
+    <div class="row"><input type="range" id="explode" min="0" max="1" value="0" step="0.01"></div>
+  </div>
+  <div class="grp"><label>剖视 (X 平面)</label>
+    <div class="row">
+      <label class="chk"><input type="checkbox" id="clip"> 开</label>
+      <input type="range" id="clipX" min="-2.5" max="2.5" value="0" step="0.05">
+    </div>
+  </div>
+  <div class="grp"><label>壳层透明</label>
+    <div class="row">
+      <label class="chk"><input type="checkbox" id="gh_block">缸体</label>
+      <label class="chk"><input type="checkbox" id="gh_head">缸盖</label>
+      <label class="chk"><input type="checkbox" id="gh_cover">室盖</label>
+      <label class="chk"><input type="checkbox" id="gh_intake">进气</label>
+      <label class="chk"><input type="checkbox" id="gh_pan">油底壳</label>
+      <label class="chk"><input type="checkbox" id="spark" checked>点火</label>
+    </div>
+  </div>
+  <div class="grp"><label>视角</label>
+    <div id="views">
+      <button data-v="threeq">3/4</button><button data-v="front">前</button>
+      <button data-v="side">侧</button><button data-v="top">顶</button>
+      <button data-v="rear">后</button><button data-v="crank">曲轴</button>
+      <button data-v="valve">配气</button><button data-v="piston">活塞</button>
+      <button data-v="valley">山谷</button><button data-v="timing">正时</button><button data-v="belt">皮带</button><button data-v="starter">启动机</button><button data-v="filter">机滤</button>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="info"><h4 id="infoTitle">—</h4><p id="infoDesc">—</p></div>
+<div class="panel" id="hint">左键拖拽 旋转 · 滚轮 缩放 · 右键 平移 · 点击部件 查看详情</div>
+
+<div id="loader"><div class="ring"></div><p>正在装配 V8 发动机 · 求解配气运动学 · 执行间隙自检 …</p><button onclick="location.reload()">重新载入</button></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "./vendor/three.module.js",
+  "three/addons/": "./vendor/addons/"
+} }
+</script>
+<script type="module" src="./js/main.js?v=14"></script>
+</body>
+</html>

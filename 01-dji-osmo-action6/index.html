@@ -1,0 +1,1233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DJI Osmo Action 6 · 3D 交互式拆解可视化</title>
+<style>
+  :root{
+    --cy:#22d3ee; --cy-dim:rgba(34,211,238,.35);
+    --bg:rgba(9,14,24,.82); --bg2:rgba(13,20,34,.92);
+    --line:rgba(148,197,255,.14); --txt:#c9d6e8; --txt-dim:#7a8aa0;
+    --mono:"Cascadia Mono",Consolas,"Courier New",monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{width:100%;height:100%;overflow:hidden;background:#04060b;
+    font-family:"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;color:var(--txt);
+    user-select:none}
+  #gl{position:fixed;inset:0;display:block;z-index:0}
+  #labels{position:fixed;inset:0;z-index:2;pointer-events:none;overflow:hidden}
+
+  /* ---------- 3D 部件标注 ---------- */
+  .p-label{position:relative;display:flex;align-items:center;gap:6px;padding:4px 10px 4px 6px;
+    background:rgba(7,11,19,.78);border:1px solid var(--cy-dim);border-radius:5px;
+    font-size:12px;letter-spacing:.5px;color:#dceaff;white-space:nowrap;
+    backdrop-filter:blur(6px);opacity:0;transition:opacity .3s;pointer-events:none;
+    box-shadow:0 0 14px rgba(34,211,238,.12)}
+  .p-label.show{opacity:1}
+  .p-label b{font-family:var(--mono);font-size:10px;color:#031018;background:var(--cy);
+    border-radius:3px;padding:1px 5px;font-weight:700}
+  .p-label.sel{border-color:var(--cy);box-shadow:0 0 18px rgba(34,211,238,.4);color:#fff}
+  .p-label::after{content:'';position:absolute;left:50%;top:100%;width:1px;height:26px;
+    background:linear-gradient(rgba(34,211,238,.75),transparent)}
+
+  /* ---------- 顶栏 ---------- */
+  #hud{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;
+    justify-content:space-between;padding:14px 20px;pointer-events:none;
+    background:linear-gradient(rgba(4,6,11,.85),transparent)}
+  #hud>*{pointer-events:auto}
+  .brand{display:flex;align-items:center;gap:12px}
+  .logo{width:44px;height:44px;border:1px solid var(--cy-dim);border-radius:9px;display:flex;
+    align-items:center;justify-content:center;font-weight:800;font-size:13px;color:var(--cy);
+    background:rgba(34,211,238,.06);letter-spacing:1px}
+  .brand h1{font-size:17px;font-weight:600;color:#eef4ff;letter-spacing:.5px}
+  .brand p{font-size:11px;color:var(--txt-dim);margin-top:2px;font-family:var(--mono)}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+  .toolbar button{padding:8px 14px;font-size:12.5px;color:var(--txt);cursor:pointer;
+    background:var(--bg);border:1px solid var(--line);border-radius:7px;transition:all .2s;
+    font-family:inherit;backdrop-filter:blur(8px)}
+  .toolbar button:hover{border-color:var(--cy-dim);color:#fff;background:rgba(34,211,238,.08)}
+  .toolbar button.on{border-color:var(--cy);color:var(--cy);background:rgba(34,211,238,.1)}
+  .toolbar button.hot{border-color:var(--cy);color:#031018;background:var(--cy);font-weight:600}
+
+  /* ---------- 左侧部件清单 ---------- */
+  #parts-panel{position:fixed;left:16px;top:76px;bottom:64px;width:252px;z-index:9;
+    background:var(--bg);border:1px solid var(--line);border-radius:12px;
+    backdrop-filter:blur(12px);display:flex;flex-direction:column;overflow:hidden;
+    transition:transform .35s,opacity .35s}
+  #parts-panel h2{padding:13px 15px 10px;font-size:13px;font-weight:600;color:#e8f1ff;
+    border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:baseline}
+  #parts-panel h2 span{font-size:10px;color:var(--txt-dim);font-family:var(--mono);font-weight:400}
+  #parts-list{list-style:none;overflow-y:auto;flex:1;padding:6px}
+  #parts-list::-webkit-scrollbar{width:4px}
+  #parts-list::-webkit-scrollbar-thumb{background:rgba(148,197,255,.2);border-radius:2px}
+  #parts-list li{display:flex;align-items:center;gap:10px;padding:8px 9px;border-radius:8px;
+    cursor:pointer;transition:background .15s;border:1px solid transparent}
+  #parts-list li:hover{background:rgba(34,211,238,.07)}
+  #parts-list li.active{background:rgba(34,211,238,.12);border-color:var(--cy-dim)}
+  #parts-list .pnum{font-family:var(--mono);font-size:10px;color:var(--cy);min-width:22px;
+    text-align:center;background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.22);
+    border-radius:4px;padding:2px 0}
+  #parts-list b{display:block;font-size:12.5px;font-weight:600;color:#dfe9f8}
+  #parts-list i{display:block;font-style:normal;font-size:10.5px;color:var(--txt-dim);margin-top:1px}
+
+  /* ---------- 右侧详情面板 ---------- */
+  #detail-panel{position:fixed;right:16px;top:76px;width:296px;max-height:calc(100% - 148px);
+    z-index:9;background:var(--bg2);border:1px solid var(--line);border-radius:12px;
+    backdrop-filter:blur(12px);overflow-y:auto;padding:16px;
+    transform:translateX(120%);opacity:0;transition:transform .35s cubic-bezier(.2,.8,.25,1),opacity .3s}
+  #detail-panel.show{transform:none;opacity:1}
+  #detail-panel::-webkit-scrollbar{width:4px}
+  #detail-panel::-webkit-scrollbar-thumb{background:rgba(148,197,255,.2)}
+  #dp-close{position:absolute;top:10px;right:10px;width:26px;height:26px;border:none;
+    background:rgba(255,255,255,.06);color:var(--txt-dim);border-radius:6px;cursor:pointer;font-size:14px}
+  #dp-close:hover{color:#fff;background:rgba(255,255,255,.12)}
+  .dp-num{font-family:var(--mono);font-size:11px;color:var(--cy);letter-spacing:2px}
+  #dp-name{font-size:17px;font-weight:600;color:#f0f6ff;margin:4px 0 2px}
+  #dp-en{font-size:11px;color:var(--txt-dim);font-family:var(--mono);letter-spacing:.5px}
+  .dp-cat{display:inline-block;margin-top:9px;font-size:10.5px;color:var(--cy);padding:3px 9px;
+    border:1px solid var(--cy-dim);border-radius:20px;background:rgba(34,211,238,.07)}
+  #dp-desc{font-size:12.5px;line-height:1.75;color:#aab8cd;margin-top:12px}
+  #dp-params{width:100%;border-collapse:collapse;margin-top:13px;font-size:12px}
+  #dp-params td{padding:7px 4px;border-bottom:1px dashed rgba(148,197,255,.12);vertical-align:top}
+  #dp-params td:first-child{color:var(--txt-dim);white-space:nowrap;width:78px}
+  #dp-params td:last-child{color:#dbe7f7;font-family:var(--mono);font-size:11.5px}
+  .dp-tip{margin-top:13px;font-size:10.5px;color:var(--txt-dim);border-top:1px solid var(--line);
+    padding-top:10px;line-height:1.7}
+
+  /* ---------- 底部提示 ---------- */
+  #hint{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:8;
+    display:flex;gap:18px;padding:9px 20px;background:var(--bg);border:1px solid var(--line);
+    border-radius:30px;font-size:11.5px;color:var(--txt-dim);backdrop-filter:blur(10px);
+    white-space:nowrap;align-items:center}
+  #hint em{font-style:normal;color:#bcd3ee}
+  #hint .dot{width:3px;height:3px;border-radius:50%;background:rgba(148,197,255,.35)}
+
+  /* ---------- 整机参数弹窗 ---------- */
+  #spec-modal{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
+    background:rgba(2,4,8,.6);backdrop-filter:blur(4px);opacity:0;pointer-events:none;transition:opacity .25s}
+  #spec-modal.show{opacity:1;pointer-events:auto}
+  .spec-card{width:min(480px,92vw);max-height:82vh;overflow-y:auto;background:var(--bg2);
+    border:1px solid var(--line);border-radius:14px;padding:22px 24px}
+  .spec-card h3{font-size:16px;color:#f0f6ff;display:flex;justify-content:space-between;align-items:center}
+  .spec-card h3 button{border:none;background:rgba(255,255,255,.07);color:var(--txt);
+    width:28px;height:28px;border-radius:7px;cursor:pointer}
+  .spec-card table{width:100%;border-collapse:collapse;margin-top:14px;font-size:12.5px}
+  .spec-card td{padding:8px 4px;border-bottom:1px dashed rgba(148,197,255,.12)}
+  .spec-card td:first-child{color:var(--txt-dim);width:92px}
+  .spec-card td:last-child{color:#dce8f8;font-family:var(--mono);font-size:12px}
+  .spec-note{margin-top:12px;font-size:10.5px;color:var(--txt-dim);line-height:1.7}
+
+  /* ---------- 开场引导 ---------- */
+  #intro{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(ellipse at 50% 42%,rgba(10,18,32,.42),rgba(3,5,9,.88));
+    backdrop-filter:blur(3px);transition:opacity .7s}
+  #intro.hide{opacity:0;pointer-events:none}
+  .intro-card{text-align:center;max-width:600px;padding:0 24px}
+  .intro-card .kicker{font-family:var(--mono);font-size:11px;letter-spacing:6px;color:var(--cy);margin-bottom:14px}
+  .intro-card h1{font-size:clamp(30px,5.4vw,46px);font-weight:700;color:#f2f7ff;letter-spacing:1px;
+    text-shadow:0 0 40px rgba(34,211,238,.35)}
+  .intro-card .sub{margin-top:10px;font-size:13.5px;color:#9fb2ca;letter-spacing:2px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:26px}
+  .chips span{font-size:11px;font-family:var(--mono);color:#bfe9f5;padding:6px 12px;
+    border:1px solid var(--cy-dim);border-radius:20px;background:rgba(34,211,238,.06)}
+  #intro-start{margin-top:32px;padding:13px 44px;font-size:14.5px;letter-spacing:3px;cursor:pointer;
+    color:#031018;background:var(--cy);border:none;border-radius:9px;font-weight:700;font-family:inherit;
+    box-shadow:0 0 34px rgba(34,211,238,.45);transition:all .25s}
+  #intro-start:hover{transform:translateY(-2px);box-shadow:0 0 50px rgba(34,211,238,.65)}
+  .intro-guide{margin-top:22px;font-size:11px;color:var(--txt-dim);letter-spacing:1px;line-height:2}
+  #intro-err{margin-top:16px;font-size:12px;color:#ff8080;font-family:var(--mono);display:none}
+
+  @media (max-width:900px){
+    #parts-panel{transform:translateX(-110%) }
+    #parts-panel.open{transform:none}
+    #detail-panel{width:min(296px,86vw)}
+    #hint{gap:10px;padding:8px 14px;font-size:10.5px}
+    .brand p{display:none}
+  }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="labels"></div>
+
+<header id="hud">
+  <div class="brand">
+    <div class="logo">DJI</div>
+    <div>
+      <h1>Osmo Action 6 · 交互拆解</h1>
+      <p>1/1.1&Prime; 方形 CMOS · 8K/30 · 4K/120 · 14 PARTS</p>
+    </div>
+  </div>
+  <nav class="toolbar">
+    <button id="btn-explode">🔩 一键拆解</button>
+    <button id="btn-labels" class="on">🏷 标注</button>
+    <button id="btn-rotate" class="on">🔄 自动旋转</button>
+    <button id="btn-spec">📋 整机参数</button>
+    <button id="btn-reset">⌂ 复位视角</button>
+  </nav>
+</header>
+
+<aside id="parts-panel">
+  <h2>部件清单 <span>BOM · 14 项 · 全代码生成</span></h2>
+  <ul id="parts-list"></ul>
+</aside>
+
+<aside id="detail-panel">
+  <button id="dp-close">✕</button>
+  <div class="dp-num" id="dp-num">PART 00</div>
+  <div id="dp-name">—</div>
+  <div id="dp-en">—</div>
+  <span class="dp-cat" id="dp-cat">—</span>
+  <p id="dp-desc"></p>
+  <table id="dp-params"></table>
+  <div class="dp-tip">提示：再次点击该部件或按 <b>Esc</b> 可取消选中；点击空白处收起面板。</div>
+</aside>
+
+<div id="hint">
+  <span><em>左键拖动</em> 旋转</span><span class="dot"></span>
+  <span><em>滚轮</em> 缩放</span><span class="dot"></span>
+  <span><em>右键拖动</em> 平移</span><span class="dot"></span>
+  <span><em>点击部件</em> 拆解 / 详情</span>
+</div>
+
+<div id="spec-modal">
+  <div class="spec-card">
+    <h3>DJI Osmo Action 6 整机参数 <button id="spec-close">✕</button></h3>
+    <table>
+      <tr><td>型号</td><td>DJI Osmo Action 6</td></tr>
+      <tr><td>影像传感器</td><td>1/1.1 英寸 方形 CMOS · 约 38MP</td></tr>
+      <tr><td>镜头</td><td>FOV 155° · f/2.0–f/4.0 可变光圈</td></tr>
+      <tr><td>视频规格</td><td>8K/30 · 4K/120fps · 10-bit D-Log M</td></tr>
+      <tr><td>防抖系统</td><td>RockSteady 3.0+ / HorizonSteady（4K）</td></tr>
+      <tr><td>防水性能</td><td>裸机 20 m · 防水壳 60 m（IP68）</td></tr>
+      <tr><td>电池</td><td>1950 mAh · 3.87 V · 最长 240 分钟</td></tr>
+      <tr><td>重量 / 尺寸</td><td>约 149 g · 72.8×47.2×33.1 mm</td></tr>
+      <tr><td>存储</td><td>64GB（50GB 可用）+ microSD 1TB</td></tr>
+      <tr><td>屏幕</td><td>前 1.46″ / 后 2.5″ OLED 触控</td></tr>
+      <tr><td>特色</td><td>色温传感器 · 磁吸快拆 · 手势控制 · 4K 自由裁切</td></tr>
+    </table>
+    <div class="spec-note">本页面为教学演示用途的简化拆解模型：几何体全部由 Three.js 代码程序化生成，非官方工程数据；部件位置与层级参考公开拆解资料合理重构。</div>
+  </div>
+</div>
+
+<div id="intro">
+  <div class="intro-card">
+    <div class="kicker">TEARDOWN VISUALIZER</div>
+    <h1>DJI Osmo Action 6</h1>
+    <div class="sub">交互式 3D 拆解 · 全部件程序化生成</div>
+    <div class="chips">
+      <span>1/1.1&Prime; 方形 CMOS</span><span>8K/30 · 4K/120</span><span>f/2.0–f/4.0</span>
+      <span>20m 防水</span><span>1950mAh</span><span>色温传感器</span><span>磁吸快拆</span>
+    </div>
+    <button id="intro-start">开 始 探 索</button>
+    <div class="intro-guide">拖动旋转 · 滚轮缩放 · 点击任意部件触发拆解动画并查看参数<br>左侧为部件清单，右侧为选中部件的详细参数</div>
+    <div id="intro-err"></div>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+    "three": "./vendor/three.module.js",
+    "three/addons/": "./vendor/addons/"
+} }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls }      from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment }    from 'three/addons/environments/RoomEnvironment.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { EffectComposer }     from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }         from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass }    from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass }         from 'three/addons/postprocessing/OutputPass.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+/* ================================================================
+   全局状态与 QA 钩子声明（先声明后填充，避免重复键）
+================================================================ */
+const QA = window.__qa = { ready:false, errors:[] };
+window.addEventListener('error', e => QA.errors.push(String(e.message||e)));
+window.addEventListener('unhandledrejection', e => QA.errors.push(String(e.reason)));
+
+const state = {
+  exploded:false, selected:null, hovered:null, labelsOn:true,
+  rotateOn:true, flying:false, viewHold:null, started:false,
+  explodeT:0, fps:0
+};
+const _frames = { n:0, t:0 };
+
+/* ================================================================
+   渲染器 / 场景 / 相机 / 后期
+================================================================ */
+const canvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({
+  canvas, antialias:true, preserveDrawingBuffer:true, powerPreference:'high-performance'
+});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.08;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x05070d, 0.022);
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth/innerHeight, 0.1, 200);
+const CAM_HOME = new THREE.Vector3(7.4, 4.8, 9.6);
+camera.position.set(20, 13, 26);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.08;
+controls.minDistance = 4.2; controls.maxDistance = 34;
+controls.maxPolarAngle = Math.PI * 0.92;
+controls.target.set(0, 0.2, 0);
+controls.autoRotate = false; controls.autoRotateSpeed = 0.7;
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+pmrem.dispose();
+
+const composer = new EffectComposer(renderer,
+  new THREE.WebGLRenderTarget(innerWidth, innerHeight, { samples:4, type:THREE.HalfFloatType }));
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.5, 0.45, 0.85);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+labelRenderer.domElement.style.position = 'absolute';
+labelRenderer.domElement.style.inset = '0';
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+/* ================================================================
+   灯光 / 背景 / 地面 / 尘埃
+================================================================ */
+scene.add(new THREE.HemisphereLight(0x3b5b8c, 0x0a0c10, 0.55));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.5); keyLight.position.set(4, 7, 6); scene.add(keyLight);
+const rimLight = new THREE.DirectionalLight(0x4a7dff, 0.85); rimLight.position.set(-6, 3, -5); scene.add(rimLight);
+const fillLight = new THREE.PointLight(0x9ecbff, 22, 40); fillLight.position.set(0, 1.5, 9); scene.add(fillLight);
+
+function makeTex(w, h, draw){
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  return t;
+}
+/* 背景渐变 */
+scene.background = makeTex(2, 512, (g)=>{
+  const gr = g.createLinearGradient(0,0,0,512);
+  gr.addColorStop(0,'#04060b'); gr.addColorStop(0.45,'#0a1322'); gr.addColorStop(1,'#030509');
+  g.fillStyle = gr; g.fillRect(0,0,2,512);
+});
+scene.background.colorSpace = THREE.SRGBColorSpace;
+
+/* 地面：暗色科技网格 */
+const floorTex = makeTex(1024, 1024, (g)=>{
+  const rg = g.createRadialGradient(512,512,40,512,512,512);
+  rg.addColorStop(0,'#0b1424'); rg.addColorStop(0.7,'#060a13'); rg.addColorStop(1,'#03040a');
+  g.fillStyle = rg; g.fillRect(0,0,1024,1024);
+  g.strokeStyle = 'rgba(90,150,230,.07)'; g.lineWidth = 1;
+  for(let i=0;i<=16;i++){ const p=i*64;
+    g.beginPath(); g.moveTo(p,0); g.lineTo(p,1024); g.stroke();
+    g.beginPath(); g.moveTo(0,p); g.lineTo(1024,p); g.stroke();
+  }
+  g.strokeStyle = 'rgba(34,211,238,.16)';
+  g.beginPath(); g.arc(512,512,300,0,Math.PI*2); g.stroke();
+  g.beginPath(); g.arc(512,512,440,0,Math.PI*2); g.stroke();
+});
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(17, 72),
+  new THREE.MeshBasicMaterial({ map:floorTex, transparent:true, opacity:0.9 })
+);
+floor.rotation.x = -Math.PI/2; floor.position.y = -4.7; scene.add(floor);
+
+const glowRing = new THREE.Mesh(
+  new THREE.RingGeometry(2.4, 3.05, 80),
+  new THREE.MeshBasicMaterial({ color:0x22d3ee, transparent:true, opacity:0.10,
+    blending:THREE.AdditiveBlending, side:THREE.DoubleSide })
+);
+glowRing.rotation.x = -Math.PI/2; glowRing.position.y = -4.68; scene.add(glowRing);
+
+/* 尘埃粒子 */
+const dustGeo = new THREE.BufferGeometry();
+{
+  const N = 300, arr = new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    const r = 6 + Math.random()*11, a = Math.random()*Math.PI*2, y = (Math.random()-0.4)*10;
+    arr[i*3] = Math.cos(a)*r; arr[i*3+1] = y; arr[i*3+2] = Math.sin(a)*r;
+  }
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+}
+const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({
+  color:0x3b82f6, size:0.05, transparent:true, opacity:0.45,
+  blending:THREE.AdditiveBlending, depthWrite:false
+}));
+scene.add(dust);
+
+/* ================================================================
+   材质库
+================================================================ */
+const M = {
+  graphite: new THREE.MeshPhysicalMaterial({ color:0x23262c, metalness:0.45, roughness:0.42,
+    clearcoat:0.55, clearcoatRoughness:0.3, envMapIntensity:0.9 }),
+  graphiteDark: new THREE.MeshStandardMaterial({ color:0x171a1f, metalness:0.4, roughness:0.52, envMapIntensity:0.7 }),
+  shellDark: new THREE.MeshPhysicalMaterial({ color:0x1b1e24, metalness:0.5, roughness:0.38,
+    clearcoat:0.7, clearcoatRoughness:0.25, envMapIntensity:1.0 }),
+  metal: new THREE.MeshStandardMaterial({ color:0x9aa2ad, metalness:0.95, roughness:0.3, envMapIntensity:1.0 }),
+  steel: new THREE.MeshStandardMaterial({ color:0x7b828c, metalness:1.0, roughness:0.24, envMapIntensity:1.1 }),
+  copper: new THREE.MeshStandardMaterial({ color:0xc47a3d, metalness:1.0, roughness:0.32, envMapIntensity:1.0 }),
+  gold: new THREE.MeshStandardMaterial({ color:0xd9a441, metalness:1.0, roughness:0.35, envMapIntensity:1.0 }),
+  dark: new THREE.MeshStandardMaterial({ color:0x0b0d11, metalness:0.1, roughness:0.85 }),
+  lensGlass: new THREE.MeshPhysicalMaterial({ color:0x0a0f1e, metalness:0.15, roughness:0.03,
+    clearcoat:1, envMapIntensity:2.2 }),
+  lensEl1: new THREE.MeshPhysicalMaterial({ color:0x9fd8ff, metalness:0, roughness:0.04,
+    transparent:true, opacity:0.5, envMapIntensity:1.6, side:THREE.DoubleSide }),
+  lensEl2: new THREE.MeshPhysicalMaterial({ color:0xffe2b0, metalness:0, roughness:0.04,
+    transparent:true, opacity:0.42, envMapIntensity:1.6, side:THREE.DoubleSide }),
+  seal: new THREE.MeshStandardMaterial({ color:0xff7a1c, metalness:0, roughness:0.55, envMapIntensity:0.8 }),
+  battery: new THREE.MeshStandardMaterial({ color:0xb9bdc4, metalness:0.7, roughness:0.32, envMapIntensity:0.9 }),
+  mg: new THREE.MeshStandardMaterial({ color:0x43484f, metalness:0.85, roughness:0.5, envMapIntensity:0.8 }),
+  white: new THREE.MeshStandardMaterial({ color:0xdfe5ec, metalness:0.1, roughness:0.3 }),
+  red: new THREE.MeshStandardMaterial({ color:0xe8443a, metalness:0.4, roughness:0.4 }),
+  fpc: new THREE.MeshStandardMaterial({ color:0xb08a3e, metalness:0.6, roughness:0.5 }),
+};
+
+/* ================================================================
+   纹理（全部 Canvas 程序化）
+================================================================ */
+const texPCB = makeTex(1024, 576, (g)=>{
+  g.fillStyle = '#0c1322'; g.fillRect(0,0,1024,576);
+  const vg = g.createRadialGradient(512,288,80,512,288,600);
+  vg.addColorStop(0,'rgba(30,55,100,.25)'); vg.addColorStop(1,'rgba(0,0,0,.3)');
+  g.fillStyle = vg; g.fillRect(0,0,1024,576);
+  g.strokeStyle = 'rgba(70,115,190,.42)'; g.lineWidth = 2;
+  for(let i=0;i<55;i++){
+    let x = Math.random()*1024, y = Math.random()*576;
+    g.beginPath(); g.moveTo(x,y);
+    for(let k=0;k<3;k++){
+      if(Math.random()<0.5) x += (Math.random()-0.5)*260; else y += (Math.random()-0.5)*180;
+      g.lineTo(x,y);
+    }
+    g.stroke();
+  }
+  g.fillStyle = 'rgba(212,175,55,.75)';
+  for(let i=0;i<130;i++){ g.beginPath(); g.arc(Math.random()*1024, Math.random()*576, 2.4, 0, Math.PI*2); g.fill(); }
+  g.strokeStyle = 'rgba(220,235,255,.5)'; g.lineWidth = 2;
+  for(let i=0;i<7;i++){
+    const x = Math.random()*900+60, y = Math.random()*460+50, w = 60+Math.random()*130, h = 40+Math.random()*70;
+    g.strokeRect(x,y,w,h);
+  }
+  g.fillStyle = 'rgba(230,240,255,.82)'; g.font = '600 22px monospace';
+  g.fillText('DJI OSMO ACTION 6 — MAINBOARD', 40, 540);
+  g.font = '16px monospace'; g.fillStyle = 'rgba(230,240,255,.5)';
+  g.fillText('REV 2.1 · 2025-09 · RoHS', 460, 540);
+});
+const texOledRear = makeTex(1024, 576, (g)=>{
+  g.fillStyle = '#04060a'; g.fillRect(0,0,1024,576);
+  g.fillStyle = '#ff4545'; g.beginPath(); g.arc(64,66,13,0,Math.PI*2); g.fill();
+  g.fillStyle = '#e8f0ff'; g.font = '700 34px Consolas,monospace';
+  g.fillText('REC  00:04:17', 96, 78);
+  g.strokeStyle = '#e8f0ff'; g.lineWidth = 3; g.strokeRect(880,46,64,30);
+  g.fillStyle = '#e8f0ff'; g.fillRect(884,50,44,22);
+  g.fillStyle = '#22d3ee'; g.font = '700 92px "Segoe UI",sans-serif';
+  g.textAlign = 'center'; g.fillText('4K · 120FPS', 512, 300);
+  g.fillStyle = '#9adcff'; g.font = '600 30px "Segoe UI",sans-serif';
+  g.fillText('HDR · 10-bit D-Log M · RockSteady ON', 512, 356);
+  g.strokeStyle = 'rgba(154,220,255,.35)'; g.lineWidth = 2;
+  const modes = ['视频','慢动作','延时','直播'];
+  modes.forEach((m,i)=>{
+    const x = 512 - 200 + i*104, on = i===0;
+    if(on){ g.fillStyle = 'rgba(34,211,238,.18)'; g.fillRect(x-40,470,84,46); }
+    g.strokeRect(x-40,470,84,46);
+    g.fillStyle = on ? '#22d3ee' : '#8496ad'; g.font = '600 24px "Microsoft YaHei",sans-serif';
+    g.fillText(m, x+2, 502);
+  });
+  g.textAlign = 'left';
+  g.fillStyle = '#6d7f96'; g.font = '22px Consolas,monospace';
+  g.fillText('ISO 100   f/2.8   EV -0.3   WB AUTO', 64, 540);
+});
+const texOledFront = makeTex(256, 256, (g)=>{
+  g.fillStyle = '#04060a'; g.fillRect(0,0,256,256);
+  g.fillStyle = '#e8f0ff'; g.font = '700 52px "Segoe UI",sans-serif'; g.textAlign = 'center';
+  g.fillText('21:07', 128, 92);
+  g.fillStyle = '#22d3ee'; g.font = '700 34px Consolas,monospace';
+  g.fillText('4K·120', 128, 150);
+  g.fillStyle = '#ff4545'; g.beginPath(); g.arc(84,192,8,0,Math.PI*2); g.fill();
+  g.fillStyle = '#c9d6e8'; g.font = '24px Consolas,monospace'; g.textAlign = 'left';
+  g.fillText('REC', 100, 200);
+  g.strokeStyle = '#c9d6e8'; g.lineWidth = 2; g.strokeRect(58,222,140,14);
+  g.fillRect(60,224,90,10);
+});
+const texBattery = makeTex(1024, 576, (g)=>{
+  g.scale(2, 2);
+  const gr = g.createLinearGradient(0,0,0,288);
+  gr.addColorStop(0,'#d6dade'); gr.addColorStop(1,'#b6bac1');
+  g.fillStyle = gr; g.fillRect(0,0,512,288);
+  g.fillStyle = '#1a1d22'; g.font = '800 58px "Segoe UI",sans-serif';
+  g.fillText('DJI', 36, 66);
+  g.fillStyle = '#5a6470'; g.font = '600 17px "Segoe UI",sans-serif';
+  g.fillText('INTELLIGENT BATTERY', 170, 62);
+  g.fillStyle = '#22303f'; g.font = '800 54px "Segoe UI",sans-serif';
+  g.fillText('1950 mAh', 36, 150);
+  g.fillStyle = '#3c4a5c'; g.font = '600 26px Consolas,monospace';
+  g.fillText('3.87 V === 7.5 Wh', 36, 192);
+  g.strokeStyle = '#e7b93c'; g.lineWidth = 5;
+  g.beginPath(); g.moveTo(390,120); g.lineTo(430,186); g.lineTo(350,186); g.closePath(); g.stroke();
+  g.fillStyle = '#e7b93c'; g.font = '800 30px sans-serif'; g.textAlign = 'center';
+  g.fillText('!', 390, 178);
+  g.textAlign = 'left';
+  for(let i=0;i<40;i++){ g.fillStyle = '#2a2f38'; g.fillRect(36+i*9, 218, 2+Math.random()*4, 40); }
+  g.fillStyle = '#55606e'; g.font = '16px "Microsoft YaHei",sans-serif';
+  g.fillText('为 Osmo Action 6 设计 · 请勿拆解、短路或投入火中', 36, 276);
+});
+const texDJI = makeTex(256, 96, (g)=>{
+  g.clearRect(0,0,256,96);
+  g.fillStyle = 'rgba(210,225,245,.85)'; g.font = '800 54px "Segoe UI",sans-serif';
+  g.textAlign = 'center'; g.fillText('DJI', 128, 66);
+});
+
+/* ================================================================
+   几何工具
+================================================================ */
+function roundedRectShape(w, h, r){
+  const s = new THREE.Shape(), x = -w/2, y = -h/2;
+  s.moveTo(x+r, y);
+  s.lineTo(x+w-r, y);   s.absarc(x+w-r, y+r,   r, -Math.PI/2, 0, false);
+  s.lineTo(x+w, y+h-r); s.absarc(x+w-r, y+h-r, r, 0, Math.PI/2, false);
+  s.lineTo(x+r, y+h);   s.absarc(x+r,   y+h-r, r, Math.PI/2, Math.PI, false);
+  s.lineTo(x, y+r);     s.absarc(x+r,   y+r,   r, Math.PI, Math.PI*1.5, false);
+  return s;
+}
+function roundedSlabGeo(w, h, d, r = 0.4, bevel = 0.05, curve = 10){
+  r = Math.min(r, w/2-0.01, h/2-0.01);
+  const bv = Math.min(bevel, d/2-0.01, r*0.8);
+  const depth = Math.max(0.02, d - 2*bv);
+  const shape = roundedRectShape(w - 2*bv, h - 2*bv, Math.max(0.02, r - bv));
+  const g = new THREE.ExtrudeGeometry(shape, {
+    depth, bevelEnabled: bv > 0.001, bevelThickness: bv, bevelSize: bv,
+    bevelSegments: 2, curveSegments: curve, steps: 1
+  });
+  g.translate(0, 0, -depth/2);
+  return g;
+}
+function latheLensGeo(r, t){
+  const pts = [];
+  for(let i=0;i<=10;i++){ const a = (i/10)*Math.PI/2; pts.push(new THREE.Vector2(Math.sin(a)*r, -Math.cos(a)*t/2)); }
+  for(let i=10;i>=0;i--){ const a = (i/10)*Math.PI/2; pts.push(new THREE.Vector2(Math.cos(a)*r, Math.sin(a)*t/2)); }
+  const g = new THREE.LatheGeometry(pts, 40); g.rotateX(Math.PI/2); return g;
+}
+function roundedRectPoints3D(w, h, r, z, seg = 8){
+  const pts = [], x0 = -w/2, y0 = -h/2, cx = [x0+r, x0+w-r], cy = [y0+r, y0+h-r];
+  const arc = (cxv, cyv, a0, a1) => { for(let i=0;i<=seg;i++){ const a = a0+(a1-a0)*i/seg;
+    pts.push(new THREE.Vector3(cxv+Math.cos(a)*r, cyv+Math.sin(a)*r, z)); } };
+  arc(cx[1], cy[1], 0, Math.PI/2); arc(cx[0], cy[1], Math.PI/2, Math.PI);
+  arc(cx[0], cy[0], Math.PI, Math.PI*1.5); arc(cx[1], cy[0], Math.PI*1.5, Math.PI*2);
+  return pts;
+}
+
+/* ================================================================
+   部件构建（14 项）
+================================================================ */
+const BODY = { W:7.28, H:4.72, R:1.12, FZ:1.655, RZ:-1.655 };
+const pickMeshes = [];
+function reg(group, part){
+  group.traverse(o => {
+    if(o.isMesh){
+      o.userData.partId = part.id;
+      if(part.noAuditAll) o.userData.noAudit = true;
+      o.material = o.material.clone();
+      o.material.userData.glow = {
+        color: o.material.emissive ? o.material.emissive.clone() : null,
+        intensity: o.material.emissiveIntensity ?? 1
+      };
+      pickMeshes.push(o);
+      part.meshes.push(o);
+    }
+  });
+}
+function mesh(geo, mat, x=0, y=0, z=0){ const m = new THREE.Mesh(geo, mat); m.position.set(x,y,z); return m; }
+function box(w,h,d,mat,x=0,y=0,z=0){ return mesh(new THREE.BoxGeometry(w,h,d), mat, x,y,z); }
+function cyl(rt,rb,h,mat,x=0,y=0,z=0,seg=40){ return mesh(new THREE.CylinderGeometry(rt,rb,h,seg), mat, x,y,z); }
+
+function buildFrontShell(p){
+  const g = p.group;
+  const shape = roundedRectShape(BODY.W, BODY.H, BODY.R);
+  const lensHole = new THREE.Path(); lensHole.absarc(-1.85, 0.25, 0.99, 0, Math.PI*2, true);
+  shape.holes.push(lensHole);
+  // 屏幕开孔（右移居中于 2.05, 0.2）
+  const scrPath = new THREE.Path();
+  const sw = 1.96, sh = 1.96, sr = 0.36, sx = 2.25, sy = 0.25;
+  scrPath.moveTo(sx-sw/2+sr, sy-sh/2);
+  scrPath.lineTo(sx+sw/2-sr, sy-sh/2); scrPath.absarc(sx+sw/2-sr, sy-sh/2+sr, sr, -Math.PI/2, 0, false);
+  scrPath.lineTo(sx+sw/2, sy+sh/2-sr); scrPath.absarc(sx+sw/2-sr, sy+sh/2-sr, sr, 0, Math.PI/2, false);
+  scrPath.lineTo(sx-sw/2+sr, sy+sh/2); scrPath.absarc(sx-sw/2+sr, sy+sh/2-sr, sr, Math.PI/2, Math.PI, false);
+  scrPath.lineTo(sx-sw/2, sy-sh/2+sr); scrPath.absarc(sx-sw/2+sr, sy-sh/2+sr, sr, Math.PI, Math.PI*1.5, false);
+  shape.holes.push(scrPath);
+  const csHole = new THREE.Path(); csHole.absarc(-0.5, -1.62, 0.125, 0, Math.PI*2, true);
+  shape.holes.push(csHole);
+  const micHole = new THREE.Path(); micHole.absarc(-0.5, 1.5, 0.05, 0, Math.PI*2, true);
+  shape.holes.push(micHole);
+  const geo = new THREE.ExtrudeGeometry(shape, { depth:0.22, bevelEnabled:true,
+    bevelThickness:0.05, bevelSize:0.05, bevelSegments:2, curveSegments:14 });
+  geo.translate(0, 0, -0.11);
+  g.add(mesh(geo, M.shellDark));
+  const logo = mesh(new THREE.PlaneGeometry(0.92, 0.34),
+    new THREE.MeshBasicMaterial({ map:texDJI, transparent:true, opacity:0.85 }), 2.25, -1.85, 0.166);
+  g.add(logo);
+}
+function buildLens(p){
+  const g = p.group;
+  const mount = cyl(1.02, 1.02, 0.14, M.graphiteDark, 0, 0, 0.07); mount.rotation.x = Math.PI/2; g.add(mount);
+  const barrel = cyl(0.94, 0.94, 0.66, M.graphite, 0, 0, 0.45); barrel.rotation.x = Math.PI/2; g.add(barrel);
+  const grip = cyl(0.97, 0.97, 0.09, M.graphiteDark, 0, 0, 0.73); grip.rotation.x = Math.PI/2; g.add(grip);
+  const inner = cyl(0.86, 0.86, 0.6, M.dark, 0, 0, 0.42, 40);
+  inner.material = new THREE.MeshStandardMaterial({ color:0x05070a, roughness:1, metalness:0, side:THREE.BackSide });
+  inner.rotation.x = Math.PI/2; g.add(inner);
+  g.add(mesh(new THREE.RingGeometry(0.16, 0.72, 40),
+    new THREE.MeshStandardMaterial({ color:0x08090c, roughness:0.9, metalness:0.2, side:THREE.DoubleSide }), 0, 0, 0.30));
+  const e1 = mesh(latheLensGeo(0.66, 0.1), M.lensEl1, 0, 0, 0.38); g.add(e1);
+  const e2 = mesh(latheLensGeo(0.5, 0.08), M.lensEl2, 0, 0, 0.54); g.add(e2);
+  const domeGeo = new THREE.SphereGeometry(0.88, 48, 20, 0, Math.PI*2, 0, Math.PI/2);
+  domeGeo.rotateX(Math.PI/2); domeGeo.scale(1, 1, 0.3);
+  g.add(mesh(domeGeo, M.lensGlass, 0, 0, 0.78));
+  const rim = mesh(new THREE.TorusGeometry(0.9, 0.045, 12, 48), M.metal, 0, 0, 0.79); g.add(rim);
+}
+function buildScreenF(p){
+  const g = p.group;
+  const glass = mesh(roundedSlabGeo(2.0, 2.0, 0.1, 0.34, 0.03),
+    new THREE.MeshPhysicalMaterial({ color:0x0c1016, metalness:0.1, roughness:0.05,
+      transparent:true, opacity:0.38, clearcoat:1, envMapIntensity:1.6 }), 0, 0, 0.10);
+  glass.userData.noAudit = true; g.add(glass);
+  const oled = box(1.76, 1.76, 0.05,
+    new THREE.MeshStandardMaterial({ color:0x000000, emissive:0xffffff, emissiveMap:texOledFront,
+      emissiveIntensity:1.25, roughness:0.4 }), 0, 0, 0.02);
+  oled.userData.isScreen = true; g.add(oled);
+  g.add(mesh(roundedSlabGeo(1.9, 1.9, 0.1, 0.3, 0.02),
+    new THREE.MeshStandardMaterial({ color:0x12203a, metalness:0.4, roughness:0.5 }), 0, 0, -0.08));
+  const fpc = box(0.34, 0.72, 0.028, M.fpc, 0, -1.12, -0.28); fpc.rotation.x = 1.05; g.add(fpc);
+}
+function buildScreenR(p){
+  const g = p.group;
+  const glass = mesh(roundedSlabGeo(6.5, 3.9, 0.1, 0.6, 0.03),
+    new THREE.MeshPhysicalMaterial({ color:0x05070c, metalness:0.2, roughness:0.06,
+      clearcoat:1, envMapIntensity:1.5 }), 0, 0, -0.26);
+  glass.userData.noAudit = true; g.add(glass);
+  const oled = mesh(new THREE.PlaneGeometry(6.25, 3.6),
+    new THREE.MeshStandardMaterial({ color:0x000000, emissive:0xffffff, emissiveMap:texOledRear,
+      emissiveIntensity:1.3, roughness:0.4, side:THREE.DoubleSide }), 0, 0, -0.185);
+  oled.rotation.y = Math.PI; oled.userData.isScreen = true; g.add(oled);
+  const pcb = mesh(roundedSlabGeo(6.5, 3.9, 0.08, 0.55, 0.02),
+    new THREE.MeshStandardMaterial({ color:0x101a30, metalness:0.4, roughness:0.55 }), 0, 0, -0.06);
+  pcb.userData.noAudit = true; g.add(pcb);
+  const f1 = box(0.5, 0.7, 0.03, M.fpc, 2.0, 2.05, -0.05); f1.rotation.x = -1.2; g.add(f1);
+  const f2 = box(0.5, 0.7, 0.03, M.fpc, -2.0, 2.05, -0.05); f2.rotation.x = -1.2; g.add(f2);
+}
+function buildBoard(p){
+  const g = p.group;
+  g.add(mesh(roundedSlabGeo(6.5, 3.85, 0.16, 0.5, 0.03),
+    new THREE.MeshStandardMaterial({ map:texPCB, metalness:0.35, roughness:0.5, envMapIntensity:0.8 })));
+  const chipMat = new THREE.MeshStandardMaterial({ color:0x0a0c10, metalness:0.25, roughness:0.3 });
+  g.add(box(1.5, 1.5, 0.14, chipMat, -0.6, 0.5, 0.15));
+  g.add(box(0.95, 0.62, 0.12, chipMat, 0.85, 0.78, 0.14));
+  g.add(box(1.05, 0.85, 0.12, chipMat, 1.7, -0.5, 0.14));
+  g.add(box(0.55, 0.55, 0.1, chipMat, -1.95, -0.85, 0.13));
+  g.add(box(1.75, 1.35, 0.1, M.steel, -0.4, 0.4, -0.13));
+  g.add(box(1.3, 1.0, 0.1, M.steel, 1.35, -0.35, -0.13));
+  g.add(box(0.7, 0.24, 0.09, M.gold, -1.6, 1.1, 0.13));
+  g.add(box(5.8, 0.09, 0.05, M.gold, 0, -1.83, 0.02));
+  /* SMD 元件：实例化，避开芯片区域 */
+  const keepOut = [[-1.45,-0.35,1.7,1.7],[0.3,0.4,1.1,0.75],[1.1,-1.0,1.2,1.0],[-2.3,-1.2,0.7,0.7],[-2.0,0.85,0.8,0.5]];
+  const placed = [];
+  let tries = 0;
+  while(placed.length < 52 && tries++ < 900){
+    const x = (Math.random()*2-1)*3.05, y = (Math.random()*2-1)*1.7;
+    if(keepOut.some(k => Math.abs(x-k[0]) < k[2]/2+0.14 && Math.abs(y-k[1]) < k[3]/2+0.14)) continue;
+    if(placed.some(q => Math.abs(x-q[0]) < 0.2 && Math.abs(y-q[1]) < 0.14)) continue;
+    placed.push([x,y]);
+  }
+  const nHalf = Math.floor(placed.length/2);
+  const imRes = new THREE.InstancedMesh(new THREE.BoxGeometry(0.11, 0.055, 0.03),
+    new THREE.MeshStandardMaterial({ color:0x2a2419, metalness:0.3, roughness:0.6 }), nHalf);
+  const imCap = new THREE.InstancedMesh(new THREE.BoxGeometry(0.09, 0.055, 0.038),
+    new THREE.MeshStandardMaterial({ color:0x8a6d3b, metalness:0.5, roughness:0.45 }),
+    placed.length - nHalf);
+  const dummy = new THREE.Object3D();
+  placed.forEach((q,i)=>{
+    dummy.position.set(q[0], q[1], 0.115); dummy.rotation.z = Math.random()<0.5 ? 0 : Math.PI/2;
+    dummy.updateMatrix();
+    (i < nHalf ? imRes : imCap).setMatrixAt(i - (i < nHalf ? 0 : nHalf), dummy.matrix);
+  });
+  g.add(imRes); g.add(imCap);
+}
+function buildSensor(p){
+  const g = p.group;
+  g.add(mesh(roundedSlabGeo(1.5, 1.5, 0.1, 0.2, 0.02),
+    new THREE.MeshStandardMaterial({ map:texPCB, metalness:0.35, roughness:0.5 })));
+  g.add(box(1.02, 1.02, 0.12, new THREE.MeshStandardMaterial({ color:0x1a1d22, metalness:0.3, roughness:0.4 }), 0, 0, 0.11));
+  const sg = box(0.8, 0.8, 0.02, new THREE.MeshPhysicalMaterial({ color:0x16352a, metalness:0.25,
+    roughness:0.1, clearcoat:1, envMapIntensity:2.4 }), 0, 0, 0.18);
+  g.add(sg);
+  for(let i=0;i<8;i++){
+    g.add(box(0.06, 0.05, 0.09, M.gold, -0.49+i*0.14, -0.79, 0.01));
+    g.add(box(0.06, 0.05, 0.09, M.gold, -0.49+i*0.14, 0.79, 0.01));
+  }
+  const fpc = box(0.5, 0.9, 0.025, M.fpc, 0, -0.25, -0.2); fpc.rotation.x = 1.15; g.add(fpc);
+}
+function buildCooling(p){
+  const g = p.group;
+  g.add(box(2.6, 1.35, 0.07, M.copper, 0, 0, 0.14));
+  for(let i=0;i<6;i++) g.add(box(0.05, 1.15, 0.42, M.copper, -1.05+i*0.42, 0, -0.1));
+  g.add(box(2.5, 1.25, 0.015,
+    new THREE.MeshStandardMaterial({ color:0x202830, metalness:0.35, roughness:0.5 }), 0, 0, -0.36));
+}
+function buildBattery(p){
+  const g = p.group;
+  g.add(mesh(roundedSlabGeo(4.8, 2.5, 0.58, 0.3, 0.05), M.battery));
+  g.add(mesh(new THREE.PlaneGeometry(4.35, 2.15),
+    new THREE.MeshStandardMaterial({ map:texBattery, roughness:0.5, metalness:0.15 }), 0, 0, 0.296));
+  g.add(box(0.32, 0.12, 0.3, M.metal, -0.7, 1.3, 0));
+  g.add(box(0.32, 0.12, 0.3, M.metal, 0.7, 1.3, 0));
+  g.add(box(0.5, 0.1, 0.22, M.dark, 0, 1.3, 0));
+}
+function buildFrame(p){
+  const g = p.group;
+  const shape = roundedRectShape(7.05, 4.42, 1.15);
+  const inner = roundedRectShape(6.55, 4.0, 1.0);
+  const hole = new THREE.Path();
+  hole.curves = inner.curves; hole.currentPoint = inner.currentPoint;
+  shape.holes.push(hole);
+  const geo = new THREE.ExtrudeGeometry(shape, { depth:2.48, bevelEnabled:true,
+    bevelThickness:0.06, bevelSize:0.06, bevelSegments:2, curveSegments:12 });
+  geo.translate(0, 0, -1.24);
+  const ringM = mesh(geo, M.mg); ringM.userData.noAudit = true; g.add(ringM);
+  g.add(box(6.1, 0.12, 1.2, M.mg, 0, 1.85, -0.7));
+  [[-2.7,1.6],[2.7,1.6],[-2.7,-1.6],[2.7,-1.6]].forEach(q => {
+    g.add(cyl(0.16, 0.16, 0.42, M.mg, q[0], q[1], 0));
+  });
+  const rail = box(2.3, 0.16, 0.66, M.graphiteDark, 0, 2.39, -0.2); g.add(rail);
+  for(let i=0;i<3;i++) g.add(cyl(0.07, 0.07, 0.1, M.gold, -0.5+i*0.5, 2.45, -0.2));
+}
+function buildSeal(p){
+  const g = p.group;
+  const pts = roundedRectPoints3D(7.15, 4.6, 1.1, 0, 10);
+  const curve = new THREE.CatmullRomCurve3(pts, true, 'catmullrom', 0.05);
+  const tube = mesh(new THREE.TubeGeometry(curve, 240, 0.075, 10, true), M.seal);
+  tube.userData.noAudit = true; g.add(tube);
+}
+function buildKeys(p){
+  const g = p.group;
+  const cap = cyl(0.3, 0.3, 0.18, M.graphite, -2.25, -0.08, 0.15); cap.rotation.x = Math.PI/2; g.add(cap);
+  const ring = mesh(new THREE.TorusGeometry(0.3, 0.032, 10, 40), M.red, -2.25, -0.08, 0.245); g.add(ring);
+  const pwr = cyl(0.22, 0.22, 0.16, M.graphite, 2.5, -0.05, -0.05); pwr.rotation.x = Math.PI/2; g.add(pwr);
+  const mic = cyl(0.05, 0.05, 0.06, M.dark, -1.0, 0.02, 0.3); g.add(mic);
+}
+function buildIO(p){
+  const g = p.group;
+  const slot = box(1.34, 0.34, 0.94, M.graphiteDark, 0, 0, 0); slot.userData.noAudit = true; g.add(slot);
+  g.add(box(0.78, 0.16, 0.34, M.dark, 0, -0.16, 0));
+  g.add(box(0.58, 0.05, 0.2, new THREE.MeshStandardMaterial({ color:0x2a2f36, metalness:0.4, roughness:0.5 }), 0, -0.2, 0));
+  for(let i=0;i<6;i++){
+    const sp = cyl(0.05, 0.05, 0.07, M.dark, 2.5, 0.02+i*0.16, 0.1);
+    sp.rotation.z = Math.PI/2; g.add(sp);
+  }
+}
+function buildColorSensor(p){
+  const g = p.group;
+  const ring = cyl(0.15, 0.15, 0.08, M.gold, 0, 0, 0); ring.rotation.x = Math.PI/2; ring.userData.noAudit = true; g.add(ring);
+  const domeGeo = new THREE.SphereGeometry(0.1, 24, 14, 0, Math.PI*2, 0, Math.PI/2);
+  domeGeo.rotateX(Math.PI/2); domeGeo.scale(1, 1, 0.55);
+  g.add(mesh(domeGeo, M.white, 0, 0, 0.05));
+  g.add(cyl(0.13, 0.13, 0.02, M.dark, 0, 0, -0.04));
+}
+function buildRearShell(p){
+  const g = p.group;
+  const geo = new THREE.ExtrudeGeometry(roundedRectShape(BODY.W, BODY.H, BODY.R),
+    { depth:0.2, bevelEnabled:true, bevelThickness:0.05, bevelSize:0.05, bevelSegments:2, curveSegments:14 });
+  geo.translate(0, 0, -0.1);
+  g.add(mesh(geo, M.shellDark));
+  [[0, 2.39], [0, -2.39]].forEach((q, qi) => {
+    const rail = box(2.3, 0.16, 0.5, M.graphiteDark, q[0], q[1], 0.02); g.add(rail);
+    for(let i=0;i<3;i++){
+      const d = cyl(0.07, 0.07, 0.08, M.gold, -0.5+i*0.5, q[1] + (qi===0 ? 0.06 : -0.06), 0.02);
+      g.add(d);
+    }
+  });
+  g.add(box(5.9, 0.1, 0.3, M.graphiteDark, 0, 1.15, 0.16));
+  g.add(box(5.9, 0.1, 0.3, M.graphiteDark, 0, -1.15, 0.16));
+}
+
+/* ================================================================
+   部件数据表
+================================================================ */
+const PARTS = [
+  { id:'shellR', num:'14', name:'后盖', en:'Rear Cover', cat:'结构件',
+    desc:'机身背部外盖，集成上下两条磁吸快拆导轨，可与原装磁吸配件秒换；内侧加强筋提升整体刚度。',
+    params:[['磁吸快拆','上下双导轨'],['材质','复合材料 + 阳极涂层'],['加强筋','2 条横向'],['配合','卡扣 + 密封槽']],
+    home:[0,0,-1.495], dir:[0,0,-3.3], order:0, label:[0,-0.6,-0.3], build:buildRearShell },
+  { id:'screenR', num:'04', name:'后屏模块', en:'Rear OLED Touch', cat:'显示系统', noAuditAll:true,
+    desc:'主要操作与取景屏幕，支持触控操作全部拍摄模式，屏显 4K/120 帧录制界面与拍摄参数。',
+    params:[['尺寸','2.5 英寸'],['分辨率','400×712 · 326ppi'],['亮度','800nit / 峰值 1000nit'],['触控','电容式全触控']],
+    home:[0,0.1,-1.315], dir:[0,0,-2.4], order:1, label:[0,0.45,-0.3], build:buildScreenR },
+  { id:'keys', num:'11', name:'按键模组', en:'Buttons', cat:'操作件',
+    desc:'顶部快门键（红色装饰环）与电源/模式键，均为防水按压结构；前侧面预留麦克风开孔。',
+    params:[['快门键','⌀6mm · 红环'],['电源键','⌀4.4mm'],['防水','按压式密封'],['麦克风孔','前壳顶部']],
+    home:[0,2.36,0.6], dir:[0,1.9,0], order:1, label:[0.4,0.35,0.2], build:buildKeys },
+  { id:'io', num:'12', name:'接口与声学', en:'I/O & Audio', cat:'接口系统',
+    desc:'底部 USB-C 充电/传输接口模块与右侧扬声器出音孔阵列，防水防尘设计。',
+    params:[['接口','USB-C'],['麦克风','3 个全向'],['扬声器','右侧出音孔阵列'],['无线','Wi-Fi 6 · BLE 5.1']],
+    home:[1.2,-2.15,0.4], dir:[2.3,-1.5,-0.7], order:1, label:[0.55,-0.25,0.3], build:buildIO },
+  { id:'battery', num:'08', name:'智能电池', en:'Intelligent Battery', cat:'电源系统',
+    desc:'大容量智能锂电池，为整机提供最长 240 分钟续航，-20℃ 低温环境下仍可正常放电。',
+    params:[['容量','1950 mAh'],['电压','3.87 V（1S）'],['能量','7.5 Wh'],['续航','最长 240 分钟'],['位置','机身下半仓']],
+    home:[0,-0.75,0.05], dir:[0,-2.7,0.5], order:2, label:[0.4,-0.45,0.4], build:buildBattery },
+  { id:'cooling', num:'07', name:'散热模块', en:'Cooling Stack', cat:'热管理',
+    desc:'铜基底 + 立式鳍片 + 石墨烯导热片的三层散热堆叠，将 SoC 热量快速导出，保障 4K/120 长录不降帧。',
+    params:[['基底','铜板 2.5×1.3'],['鳍片','6 片立式'],['导热','石墨烯片'],['作用','抑制长录过热降频']],
+    home:[0.3,1.08,0.12], dir:[0,1.9,-2.3], order:2, label:[0.4,0.4,0.25], build:buildCooling },
+  { id:'board', num:'05', name:'主板', en:'Mainboard', cat:'电子系统',
+    desc:'整机运算核心：SoC 图像处理器承担 8K/30 与 4K/120 实时防抖编码，64GB 高速存储直接焊装（50GB 可用）；双面贴装并加屏蔽罩。',
+    params:[['SoC','图像处理 SoC'],['存储','64GB（50GB 可用）'],['扩展','microSD 最大 1TB'],['色深','10-bit D-Log M'],['工艺','双面 SMT + 屏蔽罩']],
+    home:[0.2,0.4,0.42], dir:[0,0.9,-1.7], order:3, label:[0.5,0.55,0.2], build:buildBoard },
+  { id:'frame', num:'09', name:'中框骨架', en:'Mid Frame', cat:'结构件',
+    desc:'镁合金一体化骨架，是所有模块的安装基准：承载屏幕、主板、电池与密封结构，兼做天线地与散热路径。',
+    params:[['材质','镁合金'],['工艺','一体化压铸'],['安装位','14 部件承载'],['顶部','磁吸导轨基座']],
+    home:[0,0,0], dir:[0,0,0.9], order:4, label:[2.85,0.5,1.0], build:buildFrame },
+  { id:'sensor', num:'06', name:'CMOS 图像传感器', en:'Image Sensor', cat:'影像系统',
+    desc:'1/1.1 英寸方形大底 CMOS（DJI 首创方形画幅），位于镜头正后方，同一传感器可自由裁切 16:9 / 9:16 / 1:1 多种画幅。',
+    params:[['尺寸','1/1.1 英寸 方形'],['有效像素','约 38MP（7168×5376）'],['画幅','16:9 / 4:3 / 9:16 / 1:1'],['封装','陶瓷基板 + 保护玻璃']],
+    home:[-1.85,0.25,0.85], dir:[0,0,2.6], order:5, label:[-0.4,0.45,0.15], build:buildSensor },
+  { id:'seal', num:'10', name:'防水密封圈', en:'Waterproof Seal', cat:'防护系统',
+    desc:'橙色密封圈嵌于前壳与中框接缝，配合防水膜与防水按键实现裸机 20 米防水。',
+    params:[['防水等级','裸机 20m / 壳 60m IP68'],['材质','TPU 弹性体'],['位置','前壳接缝一圈'],['颜色','警示橙']],
+    home:[0,0,1.35], dir:[0,0,1.9], order:5, label:[-2.95,1.2,0.2], build:buildSeal },
+  { id:'shellF', num:'01', name:'前壳面板', en:'Front Shell', cat:'结构件',
+    desc:'机身前部外盖，precision 开孔容纳镜头、前屏、色温传感器与麦克风，与密封圈共同构成防水前墙。',
+    params:[['开孔','镜头 / 前屏 / 传感器'],['材质','复合材料 + 硬质涂层'],['密封','密封圈槽位'],['表面','防刮哑光']],
+    home:[0,0,1.495], dir:[0,0,2.4], order:6, label:[1.75,-1.8,0.2], build:buildFrontShell },
+  { id:'screenF', num:'03', name:'前屏模块', en:'Front OLED Touch', cat:'显示系统', noAuditAll:true,
+    desc:'前置彩色触控屏，自拍取景与参数速调；Vlog 用户无需外接监视器即可确认画面。',
+    params:[['尺寸','1.46 英寸'],['分辨率','342×342 · 331ppi'],['亮度','800 nit'],['触控','支持']],
+    home:[2.25,0.25,1.51], dir:[1.7,0,2.0], order:7, label:[0.4,0.5,0.15], build:buildScreenF },
+  { id:'colorSensor', num:'13', name:'色温传感器', en:'Color Temp Sensor', cat:'影像系统', noAuditAll:true,
+    desc:'Action 6 新增的独立色温感应元件，位于正面 logo 旁，实时检测环境光色温，水下、洞穴等复杂光线下白平衡依然稳定（使用时请勿遮挡）。',
+    params:[['类型','环境色温感应'],['新增','Action 6 首发'],['作用','自动白平衡更准'],['位置','正面 logo 旁']],
+    home:[-0.5,-1.62,1.595], dir:[1.3,-0.4,2.6], order:7, label:[0.35,0.2,0.25], build:buildColorSensor },
+  { id:'lens', num:'02', name:'镜头模组', en:'Lens Assembly', cat:'影像系统',
+    desc:'多片式光学镜头：疏水保护玻璃、双胶合镜片组与可变光阑，提供 155° 超广视角与 f/2.0–f/4.0 可变光圈，暗光自动开大、强光自动收缩。',
+    params:[['视场角','155°'],['光圈','f/2.0–f/4.0 可变'],['结构','多片式玻璃镜组'],['保护','疏水防污外玻璃'],['焦点','f/4.0 时 0.2m–∞']],
+    home:[-1.85,0.25,1.655], dir:[0,0,4.2], order:8, label:[0,0.5,1.0], build:buildLens },
+];
+PARTS.forEach(p => {
+  p.group = new THREE.Group();
+  p.group.position.set(...p.home);
+  p.meshes = [];
+  p.f = 0; p.hovered = false;
+  p.build(p);
+  reg(p.group, p);
+  const el = document.createElement('div');
+  el.className = 'p-label';
+  el.innerHTML = '<b>' + p.num + '</b><span>' + p.name + '</span>';
+  const lo = new CSS2DObject(el);
+  lo.position.set(...p.label);
+  p.group.add(lo);
+  p.labelEl = el;
+  scene.add(p.group);
+});
+const partById = Object.fromEntries(PARTS.map(p => [p.id, p]));
+
+/* ================================================================
+   补间系统
+================================================================ */
+const tweens = [];
+const easeOutCubic   = t => 1 - Math.pow(1-t, 3);
+const easeInOutCubic = t => t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2;
+function addTween(o){ o.time = 0; tweens.push(o); }
+function killTweensOf(tag){
+  for(let i=tweens.length-1;i>=0;i--) if(tweens[i].tag === tag) tweens.splice(i,1);
+}
+function updateTweens(dt){
+  for(let i=tweens.length-1;i>=0;i--){
+    const tw = tweens[i];
+    tw.time += dt;
+    if(tw.time < (tw.delay||0)) continue;
+    const k = Math.min(1, (tw.time-(tw.delay||0)) / tw.dur);
+    tw.onUpdate(tw.ease ? tw.ease(k) : k);
+    if(k >= 1){ tweens.splice(i,1); tw.onDone && tw.onDone(); }
+  }
+}
+
+/* 部件爆开位移应用 */
+function applyPartPos(p){
+  p.group.position.set(
+    p.home[0] + p.dir[0]*p.f,
+    p.home[1] + p.dir[1]*p.f,
+    p.home[2] + p.dir[2]*p.f
+  );
+}
+function setExplodeInstant(k){
+  PARTS.forEach(p => { p.f = k; applyPartPos(p); });
+  state.explodeT = k;
+  state.exploded = k >= 0.999;
+  syncExplodeUI();
+}
+function explodeAll(on){
+  PARTS.forEach(p => {
+    killTweensOf('part:'+p.id);
+    const from = p.f, to = on ? 1 : 0;
+    addTween({
+      tag:'part:'+p.id, dur:0.95, delay:p.order * 0.07,
+      ease: on ? easeOutCubic : easeInOutCubic,
+      onUpdate:k => { p.f = from + (to-from)*k; applyPartPos(p); }
+    });
+  });
+  state.exploded = on;
+  addTween({ tag:'explodeT', dur:0.95, delay:0, ease:easeInOutCubic,
+    onUpdate:k => { state.explodeT = on ? k : 1-k; } });
+  syncExplodeUI();
+}
+function syncExplodeUI(){
+  const b = document.getElementById('btn-explode');
+  b.textContent = state.exploded ? '🔗 一键还原' : '🔩 一键拆解';
+  b.classList.toggle('hot', state.exploded);
+}
+
+/* ================================================================
+   发光高亮
+================================================================ */
+const GLOW = new THREE.Color(0x22d3ee);
+function setPartGlow(part, intensity){
+  part.meshes.forEach(m => {
+    const mat = m.material, base = mat.userData.glow;
+    if(!base) return;
+    if(m.userData.isScreen){
+      mat.emissiveIntensity = base.intensity * (1 + intensity*0.9);
+    } else if(base.color){
+      mat.emissive.copy(base.color).lerp(GLOW, Math.min(1, intensity*1.5));
+      mat.emissiveIntensity = intensity * 1.1;
+    }
+  });
+}
+function applyGlow(){
+  PARTS.forEach(p => {
+    let it = 0;
+    if(state.selected === p.id) it = 0.24 + 0.12*Math.sin(perfT*4.2);
+    else if(state.hovered === p.id) it = 0.1;
+    setPartGlow(p, it);
+  });
+}
+
+/* ================================================================
+   相机飞行
+================================================================ */
+function flyToCam(target, camPos, dur = 0.85){
+  killTweensOf('cam');
+  const t0 = controls.target.clone(), c0 = camera.position.clone();
+  state.flying = true; state.viewHold = null;
+  controls.autoRotate = false; controls.enabled = false;
+  addTween({ tag:'cam', dur, ease:easeInOutCubic,
+    onUpdate:k => {
+      controls.target.lerpVectors(t0, target, k);
+      camera.position.lerpVectors(c0, camPos, k);
+      camera.lookAt(controls.target);
+    },
+    onDone:() => {
+      state.flying = false; controls.enabled = true;
+      controls.target.copy(target); controls.update();
+    }
+  });
+}
+function focusPart(p){
+  const target = new THREE.Vector3(
+    p.home[0] + p.dir[0]*Math.max(p.f, 0.6),
+    p.home[1] + p.dir[1]*Math.max(p.f, 0.6),
+    p.home[2] + p.dir[2]*Math.max(p.f, 0.6));
+  const dir = camera.position.clone().sub(controls.target).normalize();
+  if(dir.lengthSq() < 1e-6) dir.set(0.5, 0.35, 1).normalize();
+  const sphere = new THREE.Box3().setFromObject(p.group).getBoundingSphere(new THREE.Sphere());
+  const dist = THREE.MathUtils.clamp(sphere.radius * 3.2, 4.6, 9.5);
+  flyToCam(target, target.clone().add(dir.multiplyScalar(dist)));
+}
+
+/* ================================================================
+   选中 / 详情面板 / 清单
+================================================================ */
+const dp = document.getElementById('detail-panel');
+function selectPart(id, opts = {}){
+  if(id && state.selected === id){ deselect(); return; }
+  state.selected = id;
+  PARTS.forEach(p => p.labelEl.classList.toggle('sel', p.id === id));
+  document.querySelectorAll('#parts-list li').forEach(li =>
+    li.classList.toggle('active', li.dataset.id === id));
+  if(id){
+    const p = partById[id];
+    document.getElementById('dp-num').textContent = 'PART ' + p.num + ' / 14';
+    document.getElementById('dp-name').textContent = p.name;
+    document.getElementById('dp-en').textContent = p.en;
+    document.getElementById('dp-cat').textContent = p.cat;
+    document.getElementById('dp-desc').textContent = p.desc;
+    document.getElementById('dp-params').innerHTML =
+      p.params.map(r => '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>').join('');
+    dp.classList.add('show');
+    if(opts.fly !== false) focusPart(p);
+    if(!state.exploded) explodeAll(true);
+  } else {
+    dp.classList.remove('show');
+  }
+}
+function deselect(){ state.selected = null; dp.classList.remove('show');
+  PARTS.forEach(p => p.labelEl.classList.remove('sel'));
+  document.querySelectorAll('#parts-list li').forEach(li => li.classList.remove('active'));
+}
+
+/* 部件清单 DOM */
+const ul = document.getElementById('parts-list');
+[...PARTS].sort((a,b) => a.num.localeCompare(b.num)).forEach(p => {
+  const li = document.createElement('li');
+  li.dataset.id = p.id;
+  li.innerHTML = '<span class="pnum">' + p.num + '</span><div><b>' + p.name +
+    '</b><i>' + p.en + ' · ' + p.cat + '</i></div>';
+  li.addEventListener('click', () => selectPart(p.id));
+  li.addEventListener('mouseenter', () => { p.hovered = true; state.hovered = p.id; });
+  li.addEventListener('mouseleave', () => { p.hovered = false; if(state.hovered === p.id) state.hovered = null; });
+  ul.appendChild(li);
+});
+
+/* ================================================================
+   拾取交互
+================================================================ */
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2(-2, -2);
+let downPos = null, dragMoved = false;
+function pickAt(nx, ny){
+  pointer.set(nx, ny);
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObjects(pickMeshes, false);
+  return hits.length ? partById[hits[0].object.userData.partId] : null;
+}
+canvas.addEventListener('pointerdown', e => {
+  downPos = [e.clientX, e.clientY]; dragMoved = false;
+  controls.autoRotate = false; markInteract();
+});
+canvas.addEventListener('pointermove', e => {
+  const nx = (e.clientX/innerWidth)*2 - 1, ny = -(e.clientY/innerHeight)*2 + 1;
+  if(downPos && Math.hypot(e.clientX-downPos[0], e.clientY-downPos[1]) > 6) dragMoved = true;
+  if(!downPos){
+    const p = pickAt(nx, ny);
+    if((p && p.id) !== state.hovered){
+      PARTS.forEach(q => q.hovered = false);
+      if(p){ p.hovered = true; }
+      state.hovered = p ? p.id : null;
+      canvas.style.cursor = p ? 'pointer' : 'grab';
+    }
+  }
+});
+canvas.addEventListener('pointerup', e => {
+  if(downPos && !dragMoved && state.started){
+    const p = pickAt((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1);
+    if(p) selectPart(p.id);
+    else { deselect(); }
+  }
+  downPos = null;
+});
+canvas.style.cursor = 'grab';
+let lastInteract = performance.now();
+function markInteract(){ lastInteract = performance.now(); }
+controls.addEventListener('start', () => { markInteract(); controls.autoRotate = false; });
+
+/* ================================================================
+   工具栏按钮
+================================================================ */
+document.getElementById('btn-explode').addEventListener('click', () => explodeAll(!state.exploded));
+document.getElementById('btn-labels').addEventListener('click', function(){
+  state.labelsOn = !state.labelsOn; this.classList.toggle('on', state.labelsOn);
+});
+document.getElementById('btn-rotate').addEventListener('click', function(){
+  state.rotateOn = !state.rotateOn; this.classList.toggle('on', state.rotateOn);
+  controls.autoRotate = state.rotateOn;
+});
+document.getElementById('btn-reset').addEventListener('click', () => {
+  deselect(); flyToCam(new THREE.Vector3(0, 0.2, 0), CAM_HOME.clone());
+});
+document.getElementById('dp-close').addEventListener('click', deselect);
+const specModal = document.getElementById('spec-modal');
+document.getElementById('btn-spec').addEventListener('click', () => specModal.classList.add('show'));
+document.getElementById('spec-close').addEventListener('click', () => specModal.classList.remove('show'));
+specModal.addEventListener('click', e => { if(e.target === specModal) specModal.classList.remove('show'); });
+addEventListener('keydown', e => {
+  if(e.key === 'Escape'){ if(specModal.classList.contains('show')) specModal.classList.remove('show'); else deselect(); }
+  if(e.key === 'e' || e.key === 'E') explodeAll(!state.exploded);
+  if(e.key === 'r' || e.key === 'R') document.getElementById('btn-reset').click();
+  if(e.key === 'l' || e.key === 'L') document.getElementById('btn-labels').click();
+});
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+
+/* ================================================================
+   标注可见性
+================================================================ */
+function updateLabels(){
+  const e = state.explodeT;
+  PARTS.forEach(p => {
+    const show = state.labelsOn && (e > 0.35 || state.selected === p.id || state.hovered === p.id);
+    p.labelEl.classList.toggle('show', show);
+  });
+}
+
+/* ================================================================
+   主循环
+================================================================ */
+let perfT = 0;
+const clock = new THREE.Clock();
+function update(dt){
+  perfT += dt;
+  updateTweens(dt);
+  if(state.flying){ /* 飞行中由补间接管相机 */ }
+  else if(state.viewHold){
+    camera.position.copy(state.viewHold.pos);
+    camera.lookAt(state.viewHold.target);
+  }
+  else {
+    if(state.rotateOn && performance.now() - lastInteract > 9000) controls.autoRotate = true;
+    controls.update();
+  }
+  applyGlow();
+  dust.rotation.y += dt * 0.02;
+  glowRing.material.opacity = 0.08 + 0.04*Math.sin(perfT*1.6);
+  updateLabels();
+  _frames.n++; _frames.t += dt;
+  if(_frames.t >= 1){ state.fps = Math.round(_frames.n/_frames.t); _frames.n = 0; _frames.t = 0; }
+}
+function render(){
+  composer.render();
+  labelRenderer.render(scene, camera);
+}
+function loop(){
+  requestAnimationFrame(loop);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  update(dt);
+  render();
+}
+
+/* 开场：先静态渲染，点开始后飞入 */
+setExplodeInstant(0);
+update(0.016); render();
+loop();
+
+document.getElementById('intro-start').addEventListener('click', () => {
+  document.getElementById('intro').classList.add('hide');
+  state.started = true;
+  flyToCam(new THREE.Vector3(0, 0.2, 0), CAM_HOME.clone(), 1.6);
+  controls.autoRotate = state.rotateOn;
+});
+if(matchMedia('(max-width:900px)').matches)
+  document.getElementById('parts-panel').addEventListener('click', e => {
+    if(e.target.closest('li')) return;
+    document.getElementById('parts-panel').classList.toggle('open');
+  });
+
+/* ================================================================
+   QA 钩子（无头验证用，不影响正常使用）
+================================================================ */
+Object.assign(QA, {
+  state(){
+    return {
+      parts: PARTS.length, meshes: pickMeshes.length,
+      exploded: state.exploded, explodeT: +state.explodeT.toFixed(3),
+      selected: state.selected, hovered: state.hovered,
+      labelsOn: state.labelsOn, rotateOn: state.rotateOn,
+      fps: state.fps, started: state.started,
+      errors: QA.errors.slice(0, 10)
+    };
+  },
+  parts(){
+    return PARTS.map(p => ({
+      id: p.id, num: p.num, name: p.name, f: +p.f.toFixed(3),
+      pos: p.group.position.toArray().map(v => +v.toFixed(3))
+    }));
+  },
+  explode(on){ explodeAll(!!on); return this.state(); },
+  setExplode(k){
+    killTweensOf('cam'); state.flying = false;
+    PARTS.forEach(p => killTweensOf('part:'+p.id));
+    killTweensOf('explodeT');
+    setExplodeInstant(THREE.MathUtils.clamp(k, 0, 1));
+    return this.state();
+  },
+  select(id){ selectPart(id === null ? null : id, { fly:false }); return this.state(); },
+  focus(id){
+    const p = partById[id]; if(!p) return false;
+    selectPart(id, { fly:false });
+    focusPart(p);
+    return true;
+  },
+  project(id){
+    const p = partById[id]; if(!p) return null;
+    const v = p.group.localToWorld(new THREE.Vector3(...p.label)).project(camera);
+    return { x: Math.round((v.x+1)/2*innerWidth), y: Math.round((1-v.y)/2*innerHeight),
+             ndc: [+v.x.toFixed(3), +v.y.toFixed(3)] };
+  },
+  labels(v){ state.labelsOn = !!v; return state.labelsOn; },
+  view(azDeg, polDeg, dist){
+    const az = THREE.MathUtils.degToRad(azDeg), pol = THREE.MathUtils.degToRad(polDeg);
+    const sph = new THREE.Spherical(dist, pol, az);
+    state.viewHold = {
+      pos: new THREE.Vector3().setFromSpherical(sph),
+      target: new THREE.Vector3(0, 0.2, 0)
+    };
+    state.flying = false; killTweensOf('cam');
+    controls.enabled = false;
+    return true;
+  },
+  viewOff(){ state.viewHold = null; controls.enabled = true; controls.target.set(0, 0.2, 0); controls.update(); },
+  tick(dt){ update(dt); render(); return state.fps; },
+  collide(mode = 1){
+    const prevSel = state.selected;
+    this.setExplode(mode);
+    scene.updateMatrixWorld(true);
+    const boxA = new THREE.Box3(), boxB = new THREE.Box3(), hit = new THREE.Box3();
+    const bad = [];
+    for(let i=0;i<PARTS.length;i++) for(let j=i+1;j<PARTS.length;j++){
+      const a = PARTS[i], b = PARTS[j];
+      let worst = 0;
+      for(const ma of a.meshes){ if(ma.userData.noAudit) continue;
+        boxA.setFromObject(ma);
+        for(const mb of b.meshes){ if(mb.userData.noAudit) continue;
+          boxB.setFromObject(mb);
+          if(boxA.intersectsBox(boxB)){
+            hit.copy(boxA).intersect(boxB);
+            const vol = (hit.max.x-hit.min.x)*(hit.max.y-hit.min.y)*(hit.max.z-hit.min.z);
+            const va = (boxA.max.x-boxA.min.x)*(boxA.max.y-boxA.min.y)*(boxA.max.z-boxA.min.z);
+            const vb = (boxB.max.x-boxB.min.x)*(boxB.max.y-boxB.min.y)*(boxB.max.z-boxB.min.z);
+            const rel = vol / Math.max(1e-6, Math.min(va, vb));
+            if(rel > 0.12 && rel > worst){ worst = rel;
+              bad.push({ a:a.id, b:b.id, rel:+rel.toFixed(2),
+                ma: ma.uuid.slice(0,4), mb: mb.uuid.slice(0,4) });
+            }
+          }
+        }
+      }
+    }
+    this.setExplode(0);
+    selectPart(prevSel, { fly:false });
+    return bad;
+  },
+  info(){
+    return {
+      calls: renderer.info.render.calls, tris: renderer.info.render.triangles,
+      geoms: renderer.info.memory.geometries, texs: renderer.info.memory.textures,
+      composer: true, bloom: true
+    };
+  },
+  shotNote(){ return 'preserveDrawingBuffer=true; use CDP captureScreenshot'; }
+});
+QA.ready = true;
+</script>
+</body>
+</html>

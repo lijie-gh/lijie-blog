@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>骁龙 8 至尊版 · 3D 拆解 | Snapdragon 8 Elite</title>
+<link rel="stylesheet" href="./css/style.css?v=1">
+</head>
+<body>
+<div id="stage"></div>
+
+<!-- 3D 标注层 -->
+<div id="labels">
+  <svg id="labelSvg"></svg>
+</div>
+
+<!-- 顶部栏 -->
+<header id="topbar">
+  <div class="logo-mark"></div>
+  <div class="title-block">
+    <h1>骁龙 8 至尊版 <em>3D 拆解</em></h1>
+    <div class="sub">SNAPDRAGON 8 ELITE · SM8750-AB · INTERACTIVE TEARDOWN</div>
+  </div>
+  <div class="badges">
+    <span class="badge">制程 <b>3nm N3E</b></span>
+    <span class="badge">CPU <b>Oryon 2+6</b></span>
+    <span class="badge">GPU <b>Adreno 830</b></span>
+    <span class="badge">AI <b>Hexagon +45%</b></span>
+    <span class="badge">Wi-Fi <b>7</b></span>
+  </div>
+  <div id="stats">— FPS · — Draws</div>
+</header>
+
+<!-- 左侧：部件清单 -->
+<aside class="panel" id="partsPanel"></aside>
+
+<!-- 右侧：详情面板 -->
+<aside class="panel" id="detailPanel"></aside>
+
+<!-- 底部工具栏 -->
+<div id="toolbar">
+  <button class="tbtn primary" id="btnExplode"><span class="ic">⚙</span><span class="tx">一键拆解</span></button>
+  <div class="slider-box">
+    <label>拆解程度</label>
+    <input type="range" id="explodeSlider" min="0" max="100" value="0">
+  </div>
+  <button class="tbtn" id="btnRotate"><span class="ic">⟳</span><span class="tx">自动旋转</span></button>
+  <button class="tbtn" id="btnReset"><span class="ic">⌂</span><span class="tx">重置视角</span></button>
+  <button class="tbtn" id="btnShot"><span class="ic">📷</span><span class="tx">截图</span></button>
+  <button class="tbtn" id="btnHelp"><span class="ic">?</span><span class="tx">帮助</span></button>
+</div>
+
+<!-- 操作提示 -->
+<div id="hint"><b>拖拽</b> 旋转 · <b>滚轮</b> 缩放 · <b>右键</b> 平移 · <b>点击部件</b> 查看详情与拆解</div>
+
+<!-- 移动端页签 -->
+<button class="mtab" id="tabLeft">☰ 清单</button>
+<button class="mtab" id="tabRight">📋 详情</button>
+
+<!-- 帮助弹窗 -->
+<div id="helpModal">
+  <div class="help-card">
+    <h2>操作引导</h2>
+    <div class="sub">SNAPDRAGON 8 ELITE · GUIDE</div>
+    <table>
+      <tr><td><kbd>左键拖拽</kbd></td><td>旋转视角（环绕芯片）</td></tr>
+      <tr><td><kbd>滚轮 / 双指</kbd></td><td>缩放视角</td></tr>
+      <tr><td><kbd>右键拖拽</kbd></td><td>平移视角</td></tr>
+      <tr><td><kbd>点击部件</kbd></td><td>选中并高亮，右侧查看参数详情</td></tr>
+      <tr><td><kbd>一键拆解</kbd></td><td>逐层分离封装，查看内部结构；再次点击还原</td></tr>
+      <tr><td><kbd>拆解程度滑杆</kbd></td><td>手动控制拆解 / 合装的任意中间状态</td></tr>
+      <tr><td><kbd>Space</kbd></td><td>拆解 / 还原</td></tr>
+      <tr><td><kbd>R</kbd></td><td>重置视角</td></tr>
+      <tr><td><kbd>A</kbd></td><td>自动旋转开 / 关</td></tr>
+      <tr><td><kbd>H</kbd> / <kbd>Esc</kbd></td><td>帮助 / 关闭或取消选中</td></tr>
+    </table>
+    <button class="tbtn help-close" id="helpClose">开始探索</button>
+  </div>
+</div>
+
+<!-- 加载屏 -->
+<div id="loader">
+  <div class="load-flame"></div>
+  <h2>骁龙 8 至尊版 · 3D 拆解</h2>
+  <div class="mono">GENERATING 3nm DIE FLOORPLAN…</div>
+  <div class="loadbar"><i id="loadbarFill"></i></div>
+</div>
+
+<!-- 致命错误 -->
+<div id="fatal"><h2>无法启动 3D 渲染</h2><p></p></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "./vendor/three.module.js",
+  "three/addons/": "./vendor/addons/"
+} }
+</script>
+<script type="module" src="./js/app.js?v=4"></script>
+</body>
+</html>
